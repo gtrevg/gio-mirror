@@ -76,6 +76,8 @@ func Flexed(weight float32, widget Widget) FlexChild {
 	}
 }
 
+var Profile = false
+
 // Layout a list of children. The position of the children are
 // determined by the specified order, but Rigid children are laid out
 // before Flexed children.
@@ -105,6 +107,11 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 		}
 		children[i].call = c
 		children[i].dims = dims
+		// if Profile {
+		// 	log.Printf("rigid child %d: %v; start2: %v, %d children", i, time.Now().Sub(start2),
+		// 		start2, len(children))
+		// }
+		// numDrawn++
 	}
 	if w := f.WeightSum; w != 0 {
 		totalWeight = w
@@ -142,6 +149,7 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 		children[i].call = c
 		children[i].dims = dims
 	}
+	// start = time.Now()
 	var maxCross int
 	var maxBaseline int
 	for _, child := range children {
@@ -197,6 +205,9 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 			}
 		}
 	}
+	// if Profile {
+	// 	log.Printf("layout all: %v", time.Now().Sub(start))
+	// }
 	switch f.Spacing {
 	case SpaceSides:
 		mainSize += space / 2

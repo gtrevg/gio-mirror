@@ -197,5 +197,6 @@ void gio_main() {
 		globalWindowDel = [[GioWindowDelegate alloc] init];
 
 		[NSApp run];
+		// printf("NSApp run finished\n");
 	}
 }
