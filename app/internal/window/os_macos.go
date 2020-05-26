@@ -143,8 +143,6 @@ func (w *window) Close() {
 }
 
 func (w *window) setStage(stage system.Stage) {
-	// log.Printf("setStage starting: %v", stage)
-	// defer log.Printf("setStage done")
 	if stage == w.stage {
 		return
 	}
