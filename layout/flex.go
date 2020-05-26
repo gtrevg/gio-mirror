@@ -152,11 +152,6 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 			maxBaseline = b
 		}
 	}
-<<<<<<< HEAD
-=======
-	cs := gtx.Constraints
-	mainMin, _ := axisMainConstraint(f.Axis, cs)
->>>>>>> 3a2b5dc... wip
 	var space int
 	if mainMin > size {
 		space = mainMin - size
