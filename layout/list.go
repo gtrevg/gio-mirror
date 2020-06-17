@@ -31,8 +31,6 @@ type List struct {
 	Alignment Alignment
 
 	ctx         Context
-	macro       op.MacroOp
-	child       op.MacroOp
 	scroll      gesture.Scroll
 	scrollDelta int
 
@@ -42,13 +40,13 @@ type List struct {
 	// before calling Layout.
 	Position Position
 
-	doScrollTo bool
-	scrollTo   int
-	fromEnd    bool
+	//doScrollTo bool
+	//scrollTo   int
+	fromEnd bool
 
 	len        int
-	FirstDrawn int
-	LastDrawn  int
+	firstDrawn int
+	lastDrawn  int
 
 	// maxSize is the total size of visible children.
 	maxSize  int
@@ -79,7 +77,7 @@ type Position struct {
 	// First is the index of the first visible child.
 	First int
 	// Offset is the distance in pixels from the top edge to the child at index
-	// First.  Positive offsets are above the edge.
+	// First. Positive offsets are above the edge.
 	Offset int
 }
 
@@ -101,50 +99,53 @@ func (l *List) init(gtx Context, len int) {
 	l.children = l.children[:0]
 	l.len = len
 	l.update()
-	if l.doScrollTo {
-		if l.scrollTo >= len {
-			if len > 0 {
-				l.scrollTo = len - 1
-			} else {
-				l.scrollTo = 0
-			}
-		}
-		// If l.scrollTo is already in view, do nothing.
-		if l.FirstDrawn < l.scrollTo &&
-			l.scrollTo < l.LastDrawn {
-			l.doScrollTo = false
-		} else {
-			l.Position.Offset = 0
-			l.Position.First = l.scrollTo
-			if l.LastDrawn > 0 && l.scrollTo >= l.LastDrawn {
-				l.fromEnd = true
-				l.Position.First++
-			} else {
-				l.fromEnd = false
-			}
-		}
-	} else if l.scrollToEnd() || l.Position.First > len {
+	// if l.doScrollTo {
+	// 	if l.scrollTo >= len {
+	// 		if len > 0 {
+	// 			l.scrollTo = len - 1
+	// 		} else {
+	// 			l.scrollTo = 0
+	// 		}
+	// 	}
+	// 	// If l.scrollTo is already in view, do nothing.
+	// 	if l.firstDrawn < l.scrollTo && l.scrollTo < l.lastDrawn {
+	// 		l.doScrollTo = false
+	// 	} else {
+	// 		l.Position.Offset = 0
+	// 		l.Position.First = l.scrollTo
+	// 		if l.lastDrawn > 0 && l.scrollTo >= l.lastDrawn {
+	// 			l.fromEnd = true
+	// 			l.Position.First++
+	// 		} else {
+	// 			l.fromEnd = false
+	// 		}
+	// 	}
+	// } else
+	if !l.fromEnd && (l.scrollToEnd() || l.Position.First > len) {
 		l.Position.Offset = 0
 		l.Position.First = len
 	}
-	l.macro = op.Record(gtx.Ops)
-	l.next()
 }
 
 // Layout the List.
 func (l *List) Layout(gtx Context, len int, w ListElement) Dimensions {
-	for l.init(gtx, len); l.more(); l.next() {
-		crossMin, crossMax := axisCrossConstraint(l.Axis, l.ctx.Constraints)
-		cs := axisConstraints(l.Axis, 0, inf, crossMin, crossMax)
+	l.init(gtx, len)
+	crossMin, crossMax := axisCrossConstraint(l.Axis, l.ctx.Constraints)
+	cs := axisConstraints(l.Axis, 0, inf, crossMin, crossMax)
+	gtx.Constraints = cs
+	macro := op.Record(gtx.Ops)
+	for l.next(); l.more(); l.next() {
+		child := op.Record(l.ctx.Ops)
 		i := l.index()
-		gtx.Constraints = cs
-		l.end(i, w(gtx, i))
+		dims := w(gtx, i)
+		call := child.Stop()
+		l.end(i, dims, call)
 	}
-	return l.layout()
+	return l.layout(macro)
 }
 
 func (l *List) scrollToEnd() bool {
-	return (l.doScrollTo && l.fromEnd) || (l.ScrollToEnd && !l.Position.BeforeEnd)
+	return l.fromEnd || /*(l.doScrollTo && l.fromEnd) || */ (l.ScrollToEnd && !l.Position.BeforeEnd)
 }
 
 // Dragging reports whether the List is being dragged.
@@ -152,38 +153,61 @@ func (l *List) Dragging() bool {
 	return l.scroll.State() == gesture.StateDragging
 }
 
-// ScrollTo makes sure list index item i is in view.  If it's above the top,
-// it becomes the top item.  If it's below the bottom, it becomes the bottom
-// item.  If i < 0, uses 0.  If you ScrollTo(n) and then later layout a list
-// shorter than n, Layout scrolls to the end of the list.
+// ScrollTo makes sure list index item i is in view. If it's above the top, it
+// becomes the top item. If it's below the bottom, it becomes the bottom item.
+// If i < 0, uses 0. If you ScrollTo(n) and then later layout a list shorter
+// than n, Layout scrolls to the end of the list.
 func (l *List) ScrollTo(i int) {
-	l.doScrollTo = true
+	// l.doScrollTo = true
 	if i < 0 {
 		i = 0
+	} else if i >= l.len {
+		if l.len > 0 {
+			i = l.len - 1
+		} else {
+			i = 0
+		}
 	}
-	l.scrollTo = i
+	l.fromEnd = false
+	// If i is already completely in view, do nothing.
+	if l.firstDrawn < i && i < l.lastDrawn {
+		return
+	}
+	l.Position.Offset = 0
+	l.Position.First = i
+	if l.lastDrawn > 0 && i >= l.lastDrawn {
+		l.fromEnd = true
+		l.Position.First++
+	}
 }
 
-func (l *List) PageUp() {
-	// If already at the top, do nothing
-	if l.Position.BeforeEnd && l.Position.First == 0 && l.Position.Offset == 0 {
+// ScrollPages scrolls a number of pages. n < 0 is up or left, n > 0 is down
+// or right. n == 0 is a no-op.
+func (l *List) ScrollPages(n int) {
+	if n == 0 {
+		return
+	}
+	// If going up/left and already at the beginning, do nothing
+	if n < 0 && l.Position.BeforeEnd && l.Position.First == 0 && l.Position.Offset == 0 {
+		return
+	}
+	// If going down/right and already at the end, do nothing.
+	if n > 0 && !l.Position.BeforeEnd {
 		return
 	}
 
-	l.Position.Offset -= l.height
+	l.Position.Offset += (l.height * n)
 	// If you don't do this and l.ScrollToEnd == true, Position.Offset is
 	// ignored.
 	l.Position.BeforeEnd = true
 }
 
-func (l *List) PageDown() {
-	// If already at the end, do nothing.
-	if !l.Position.BeforeEnd {
-		return
-	}
+func (l *List) PagePrev() {
+	l.ScrollPages(-1)
+}
 
-	l.Position.Offset += l.height
-	l.Position.BeforeEnd = true
+func (l *List) PageNext() {
+	l.ScrollPages(1)
 }
 
 func (l *List) update() {
@@ -201,9 +225,6 @@ func (l *List) next() {
 		l.Position.BeforeEnd = true
 		l.Position.Offset += l.scrollDelta
 		l.dir = l.nextDir()
-	}
-	if l.more() {
-		l.child = op.Record(l.ctx.Ops)
 	}
 }
 
@@ -229,10 +250,9 @@ func (l *List) nextDir() iterationDir {
 	last := l.Position.First + len(l.children)
 	// Clamp offset.
 	if l.maxSize-l.Position.Offset < vsize &&
-		(last == l.len ||
-			(l.doScrollTo &&
-				l.fromEnd &&
-				last == l.scrollTo+1)) {
+		(last == l.len) { /* ||
+		(l.fromEnd &&
+			last == l.scrollTo+1)) { */
 		l.Position.Offset = l.maxSize - vsize
 	}
 	if l.Position.Offset < 0 && l.Position.First == 0 {
@@ -250,8 +270,7 @@ func (l *List) nextDir() iterationDir {
 }
 
 // End the current child by specifying its dimensions.
-func (l *List) end(i int, dims Dimensions) {
-	call := l.child.Stop()
+func (l *List) end(i int, dims Dimensions, call op.CallOp) {
 	child := scrollChild{i, dims.Size, call}
 	mainSize := axisMain(l.Axis, child.size)
 	l.maxSize += mainSize
@@ -269,7 +288,7 @@ func (l *List) end(i int, dims Dimensions) {
 }
 
 // Layout the List and return its dimensions.
-func (l *List) layout() Dimensions {
+func (l *List) layout(macro op.MacroOp) Dimensions {
 	if l.more() {
 		panic("unfinished child")
 	}
@@ -306,8 +325,8 @@ func (l *List) layout() Dimensions {
 		pos += space
 	}
 	if len(children) > 0 {
-		l.FirstDrawn = children[0].index
-		l.LastDrawn = children[len(children)-1].index
+		l.firstDrawn = children[0].index
+		l.lastDrawn = children[len(children)-1].index
 	}
 	for _, child := range children {
 		sz := child.size
@@ -351,12 +370,16 @@ func (l *List) layout() Dimensions {
 		pos = mainMax
 	}
 	dims := axisPoint(l.Axis, pos, maxCross)
-	call := l.macro.Stop()
+	call := macro.Stop()
 	defer op.Push(l.ctx.Ops).Pop()
 	pointer.Rect(image.Rectangle{Max: dims}).Add(ops)
 	l.scroll.Add(ops)
 	call.Add(ops)
-	l.doScrollTo = false
+	// l.doScrollTo = false
+	l.fromEnd = false
 	l.height = dims.Y
 	return Dimensions{Size: dims}
 }
+
+func (l *List) FirstDrawn() int { return l.firstDrawn }
+func (l *List) LastDrawn() int  { return l.lastDrawn }

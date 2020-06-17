@@ -147,6 +147,7 @@ CFTypeRef gio_createWindow(CFTypeRef viewRef, const char *title, CGFloat width, 
 		NSView *view = (__bridge NSView *)viewRef;
 		[window setContentView:view];
 		[window makeFirstResponder:view];
+		[window setTabbingMode:NSWindowTabbingModeDisallowed];
 		window.releasedWhenClosed = NO;
 		window.delegate = globalWindowDel;
 		return (__bridge_retained CFTypeRef)window;
