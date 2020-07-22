@@ -86,6 +86,11 @@ type CommandEvent struct {
 	Cancel bool
 }
 
+// MenuEvent is sent when the user selects a menu item.
+type MenuEvent struct {
+	Tag int
+}
+
 // Stage of a Window.
 type Stage uint8
 
@@ -122,3 +127,4 @@ func (StageEvent) ImplementsEvent()     {}
 func (*CommandEvent) ImplementsEvent()  {}
 func (DestroyEvent) ImplementsEvent()   {}
 func (ClipboardEvent) ImplementsEvent() {}
+func (MenuEvent) ImplementsEvent()      {}
